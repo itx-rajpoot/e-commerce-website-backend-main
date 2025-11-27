@@ -97,6 +97,11 @@ mongoose.connect(MONGODB_URI)
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err && (err.stack || err.message || err));
   if (res.headersSent) return next(err);
+  // In development return the real error message to aid debugging. In production keep it generic.
+  if (process.env.NODE_ENV !== 'production') {
+    const message = err && (err.message || err.stack || String(err));
+    return res.status(500).json({ message: message || 'Server error' });
+  }
   res.status(500).json({ message: 'Server error' });
 });
 
