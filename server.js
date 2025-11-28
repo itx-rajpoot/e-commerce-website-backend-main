@@ -20,16 +20,24 @@ const User = require('./models/User');
 const app = express();
 
 // Enhanced CORS configuration
-app.use(cors({
-  origin: [
-    'http://localhost:8080',
-    'http://127.0.0.1:8080',
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'http://localhost:8081' // Added this line
-  ],
-  origin: ['http://localhost:8080', 'http://127.0.0.1:8080', 'http://localhost:3000', 'http://127.0.0.1:3000'],
+const allowedOrigins = [
+  'http://localhost:8080',
+  'http://127.0.0.1:8080',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:8081'
+];
 
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, server-to-server)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
@@ -71,8 +79,26 @@ cron.schedule('0 2 * * *', () => {
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/shopdb';
 mongoose.connect(MONGODB_URI)
-  .then(() => console.log('✅ Connected to MongoDB'))
+  .then(async () => {
+    console.log('✅ Connected to MongoDB');
+    // Initialize admin user if helper exists
+    try {
+      if (typeof User.initAdmin === 'function') {
+        await User.initAdmin();
+        console.log('🔐 Admin user initialization checked');
+      }
+    } catch (initErr) {
+      console.warn('Admin initialization error:', initErr.message || initErr);
+    }
+  })
   .catch(err => console.error('❌ MongoDB connection error:', err));
+
+// Global error handler to capture uncaught errors in routes
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err && (err.stack || err.message || err));
+  if (res.headersSent) return next(err);
+  res.status(500).json({ message: 'Server error' });
+});
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
