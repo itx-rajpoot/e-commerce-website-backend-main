@@ -5,10 +5,7 @@ const fs = require('fs');
 const { adminAuth } = require('../middleware/auth');
 const Product = require('../models/Product');
 const Category = require('../models/Category');
-<<<<<<< HEAD
 const cloudinary = require('../utils/cloudinary');
-=======
->>>>>>> bca34f2452cecc9fe5804b568e05e10cb379f836
 
 const router = express.Router();
 
@@ -122,7 +119,6 @@ router.post('/', adminAuth, upload.single('image'), async (req, res) => {
       featured: featured === 'true'
     });
 
-<<<<<<< HEAD
     // If Cloudinary is configured, upload the file and replace local filename with URL
     if (process.env.CLOUDINARY_URL && cloudinary) {
       try {
@@ -138,8 +134,6 @@ router.post('/', adminAuth, upload.single('image'), async (req, res) => {
       }
     }
 
-=======
->>>>>>> bca34f2452cecc9fe5804b568e05e10cb379f836
     await product.save();
     res.status(201).json(product);
   } catch (error) {
@@ -167,7 +161,6 @@ router.put('/:id', adminAuth, upload.single('image'), async (req, res) => {
     if (req.file) {
       const oldProduct = await Product.findById(id);
       if (oldProduct && oldProduct.image) {
-<<<<<<< HEAD
         // If image was stored locally (no public id), delete old local file
         if (!oldProduct.imagePublicId) {
           const oldImagePath = `uploads/products/${oldProduct.image}`;
@@ -199,15 +192,6 @@ router.put('/:id', adminAuth, upload.single('image'), async (req, res) => {
           console.error('Cloudinary upload error on update:', err);
         }
       }
-=======
-        // Delete old image file
-        const oldImagePath = `uploads/products/${oldProduct.image}`;
-        if (fs.existsSync(oldImagePath)) {
-          fs.unlinkSync(oldImagePath);
-        }
-      }
-      updateData.image = req.file.filename;
->>>>>>> bca34f2452cecc9fe5804b568e05e10cb379f836
     }
 
     const product = await Product.findByIdAndUpdate(id, updateData, { new: true });

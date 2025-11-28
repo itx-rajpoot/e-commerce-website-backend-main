@@ -4,10 +4,8 @@ const path = require('path');
 const fs = require('fs');
 const { adminAuth } = require('../middleware/auth');
 const Slider = require('../models/Slider');
-<<<<<<< HEAD
 const cloudinary = require('../utils/cloudinary');
-=======
->>>>>>> bca34f2452cecc9fe5804b568e05e10cb379f836
+
 
 const router = express.Router();
 
@@ -87,7 +85,6 @@ router.post('/', adminAuth, upload.single('image'), async (req, res) => {
       order: order || 0
     });
 
-<<<<<<< HEAD
     if (process.env.CLOUDINARY_URL && cloudinary) {
       try {
         const uploadResult = await cloudinary.uploader.upload(req.file.path, { folder: 'ecommerce/sliders' });
@@ -101,8 +98,6 @@ router.post('/', adminAuth, upload.single('image'), async (req, res) => {
       }
     }
 
-=======
->>>>>>> bca34f2452cecc9fe5804b568e05e10cb379f836
     await slider.save();
     res.status(201).json(slider);
   } catch (error) {
@@ -130,7 +125,6 @@ router.put('/:id', adminAuth, upload.single('image'), async (req, res) => {
     if (req.file) {
       const oldSlider = await Slider.findById(id);
       if (oldSlider && oldSlider.image) {
-<<<<<<< HEAD
         if (!oldSlider.imagePublicId) {
           const oldImagePath = `uploads/sliders/${oldSlider.image}`;
           if (fs.existsSync(oldImagePath)) {
@@ -158,15 +152,6 @@ router.put('/:id', adminAuth, upload.single('image'), async (req, res) => {
           console.error('Cloudinary upload error on slider update:', err);
         }
       }
-=======
-        // Delete old image file
-        const oldImagePath = `uploads/sliders/${oldSlider.image}`;
-        if (fs.existsSync(oldImagePath)) {
-          fs.unlinkSync(oldImagePath);
-        }
-      }
-      updateData.image = req.file.filename;
->>>>>>> bca34f2452cecc9fe5804b568e05e10cb379f836
     }
 
     const slider = await Slider.findByIdAndUpdate(id, updateData, { new: true });

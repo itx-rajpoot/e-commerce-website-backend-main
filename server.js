@@ -14,17 +14,13 @@ const cartRoutes = require('./routes/cart');
 const orderRoutes = require('./routes/orders');
 const cron = require('node-cron');
 const cleanupOldOrders = require('./scripts/cleanupOrders');
-<<<<<<< HEAD
 const User = require('./models/User');
-=======
->>>>>>> bca34f2452cecc9fe5804b568e05e10cb379f836
 
 
 const app = express();
 
 // Enhanced CORS configuration
 app.use(cors({
-<<<<<<< HEAD
   origin: [
     'http://localhost:8080',
     'http://127.0.0.1:8080',
@@ -32,9 +28,8 @@ app.use(cors({
     'http://127.0.0.1:3000',
     'http://localhost:8081' // Added this line
   ],
-=======
   origin: ['http://localhost:8080', 'http://127.0.0.1:8080', 'http://localhost:3000', 'http://127.0.0.1:3000'],
->>>>>>> bca34f2452cecc9fe5804b568e05e10cb379f836
+
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
@@ -76,21 +71,7 @@ cron.schedule('0 2 * * *', () => {
 // MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/shopdb';
 mongoose.connect(MONGODB_URI)
-<<<<<<< HEAD
-  .then(async () => {
-    console.log('✅ Connected to MongoDB');
-    // Initialize admin user if missing
-    try {
-      if (User && typeof User.initAdmin === 'function') {
-        await User.initAdmin();
-      }
-    } catch (err) {
-      console.error('Error initializing admin user:', err);
-    }
-  })
-=======
   .then(() => console.log('✅ Connected to MongoDB'))
->>>>>>> bca34f2452cecc9fe5804b568e05e10cb379f836
   .catch(err => console.error('❌ MongoDB connection error:', err));
 
 const PORT = process.env.PORT || 5000;

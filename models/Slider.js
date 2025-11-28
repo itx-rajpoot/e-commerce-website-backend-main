@@ -12,18 +12,13 @@ const sliderSchema = new mongoose.Schema({
     trim: true
   },
   image: {
-<<<<<<< HEAD
     type: String, // This will store the filename or URL when using Cloudinary
     required: true
   },
   imagePublicId: {
     type: String, // Cloudinary public_id (optional)
   },
-=======
-    type: String, // This will store the filename
-    required: true
-  },
->>>>>>> bca34f2452cecc9fe5804b568e05e10cb379f836
+
   buttonText: {
     type: String,
     required: true,
