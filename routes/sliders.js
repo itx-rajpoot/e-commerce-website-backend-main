@@ -9,25 +9,10 @@ const cloudinary = require('../utils/cloudinary');
 
 const router = express.Router();
 
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadPath = 'uploads/sliders/';
-    // Create directory if it doesn't exist
-    if (!fs.existsSync(uploadPath)) {
-      fs.mkdirSync(uploadPath, { recursive: true });
-    }
-    cb(null, uploadPath);
-  },
-  filename: (req, file, cb) => {
-    // Generate unique filename
-    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(file.originalname)}`;
-    cb(null, uniqueName);
-  }
-});
-
+// Use memory storage for serverless compatibility
+const storage = multer.memoryStorage();
 const upload = multer({
-  storage: storage,
+  storage,
   limits: {
     fileSize: 5 * 1024 * 1024 // 5MB limit
   },
@@ -78,23 +63,46 @@ router.post('/', adminAuth, upload.single('image'), async (req, res) => {
     const slider = new Slider({
       title,
       description,
-      image: req.file.filename,
+      image: '',
       buttonText,
       buttonLink,
       active: active === 'true',
       order: order || 0
     });
 
-    if (process.env.CLOUDINARY_URL && cloudinary) {
+    // Upload buffer to Cloudinary if configured
+    if (process.env.CLOUDINARY_URL && cloudinary && req.file && req.file.buffer) {
       try {
-        const uploadResult = await cloudinary.uploader.upload(req.file.path, { folder: 'ecommerce/sliders' });
+        const dataUri = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+        const uploadResult = await cloudinary.uploader.upload(dataUri, { folder: 'ecommerce/sliders' });
         slider.image = uploadResult.secure_url;
         slider.imagePublicId = uploadResult.public_id;
-        fs.unlink(req.file.path, (err) => {
-          if (err) console.warn('Failed to delete local slider image:', err.message || err);
-        });
       } catch (err) {
         console.error('Cloudinary upload error for slider:', err);
+        // Fallback: write to disk
+        try {
+          const uploadPath = 'uploads/sliders/';
+          if (!fs.existsSync(uploadPath)) fs.mkdirSync(uploadPath, { recursive: true });
+          const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(req.file.originalname)}`;
+          const fullPath = path.join(uploadPath, uniqueName);
+          fs.writeFileSync(fullPath, req.file.buffer);
+          slider.image = uniqueName;
+        } catch (fsErr) {
+          console.error('Failed to write uploaded slider file to disk as fallback:', fsErr);
+        }
+      }
+    } else {
+      // No Cloudinary configured - save file locally
+      try {
+        const uploadPath = 'uploads/sliders/';
+        if (!fs.existsSync(uploadPath)) fs.mkdirSync(uploadPath, { recursive: true });
+        const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(req.file.originalname)}`;
+        const fullPath = path.join(uploadPath, uniqueName);
+        fs.writeFileSync(fullPath, req.file.buffer);
+        slider.image = uniqueName;
+      } catch (fsErr) {
+        console.error('Failed to save slider file locally:', fsErr);
+        return res.status(500).json({ message: 'Failed to save image' });
       }
     }
 
@@ -139,17 +147,26 @@ router.put('/:id', adminAuth, upload.single('image'), async (req, res) => {
         }
       }
 
-      updateData.image = req.file.filename;
-      if (process.env.CLOUDINARY_URL && cloudinary) {
+      // Handle new upload (buffer -> cloudinary or local fallback)
+      if (process.env.CLOUDINARY_URL && cloudinary && req.file && req.file.buffer) {
         try {
-          const uploadResult = await cloudinary.uploader.upload(req.file.path, { folder: 'ecommerce/sliders' });
+          const dataUri = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+          const uploadResult = await cloudinary.uploader.upload(dataUri, { folder: 'ecommerce/sliders' });
           updateData.image = uploadResult.secure_url;
           updateData.imagePublicId = uploadResult.public_id;
-          fs.unlink(req.file.path, (err) => {
-            if (err) console.warn('Failed to delete local slider image:', err.message || err);
-          });
         } catch (err) {
           console.error('Cloudinary upload error on slider update:', err);
+        }
+      } else {
+        try {
+          const uploadPath = 'uploads/sliders/';
+          if (!fs.existsSync(uploadPath)) fs.mkdirSync(uploadPath, { recursive: true });
+          const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(req.file.originalname)}`;
+          const fullPath = path.join(uploadPath, uniqueName);
+          fs.writeFileSync(fullPath, req.file.buffer);
+          updateData.image = uniqueName;
+        } catch (fsErr) {
+          console.error('Failed to save slider file locally on update:', fsErr);
         }
       }
     }
@@ -177,11 +194,19 @@ router.delete('/:id', adminAuth, async (req, res) => {
       return res.status(404).json({ message: 'Slider not found' });
     }
 
-    // Delete image file
+    // Delete image file or Cloudinary asset
     if (slider.image) {
-      const imagePath = `uploads/sliders/${slider.image}`;
-      if (fs.existsSync(imagePath)) {
-        fs.unlinkSync(imagePath);
+      if (slider.imagePublicId && process.env.CLOUDINARY_URL && cloudinary) {
+        try {
+          await cloudinary.uploader.destroy(slider.imagePublicId);
+        } catch (err) {
+          console.warn('Failed to delete slider image from Cloudinary:', err.message || err);
+        }
+      } else {
+        const imagePath = `uploads/sliders/${slider.image}`;
+        if (fs.existsSync(imagePath)) {
+          fs.unlinkSync(imagePath);
+        }
       }
     }
 

@@ -9,25 +9,11 @@ const cloudinary = require('../utils/cloudinary');
 
 const router = express.Router();
 
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadPath = 'uploads/products/';
-    // Create directory if it doesn't exist
-    if (!fs.existsSync(uploadPath)) {
-      fs.mkdirSync(uploadPath, { recursive: true });
-    }
-    cb(null, uploadPath);
-  },
-  filename: (req, file, cb) => {
-    // Generate unique filename
-    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(file.originalname)}`;
-    cb(null, uniqueName);
-  }
-});
-
+// Configure multer for file uploads - use memoryStorage to be serverless-friendly
+// Use memory storage for serverless compatibility (upload buffer to Cloudinary)
+const storage = multer.memoryStorage();
 const upload = multer({
-  storage: storage,
+  storage,
   limits: {
     fileSize: 5 * 1024 * 1024 // 5MB limit
   },
@@ -113,24 +99,45 @@ router.post('/', adminAuth, upload.single('image'), async (req, res) => {
       name,
       description,
       price: parseFloat(price),
-      image: req.file.filename,
+      image: '',
       category,
       stock: parseInt(stock),
       featured: featured === 'true'
     });
 
-    // If Cloudinary is configured, upload the file and replace local filename with URL
-    if (process.env.CLOUDINARY_URL && cloudinary) {
+    // If Cloudinary is configured, upload the buffer and set secure URL
+    if (process.env.CLOUDINARY_URL && cloudinary && req.file && req.file.buffer) {
       try {
-        const uploadResult = await cloudinary.uploader.upload(req.file.path, { folder: 'ecommerce/products' });
+        const dataUri = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+        const uploadResult = await cloudinary.uploader.upload(dataUri, { folder: 'ecommerce/products' });
         product.image = uploadResult.secure_url;
         product.imagePublicId = uploadResult.public_id;
-        // delete local file
-        fs.unlink(req.file.path, (err) => {
-          if (err) console.warn('Failed to delete local product image:', err.message || err);
-        });
       } catch (err) {
         console.error('Cloudinary upload error:', err);
+        // Fallback: write to disk if possible
+        try {
+          const uploadPath = 'uploads/products/';
+          if (!fs.existsSync(uploadPath)) fs.mkdirSync(uploadPath, { recursive: true });
+          const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(req.file.originalname)}`;
+          const fullPath = path.join(uploadPath, uniqueName);
+          fs.writeFileSync(fullPath, req.file.buffer);
+          product.image = uniqueName;
+        } catch (fsErr) {
+          console.error('Failed to write uploaded file to disk as fallback:', fsErr);
+        }
+      }
+    } else {
+      // No Cloudinary configured - save file locally
+      try {
+        const uploadPath = 'uploads/products/';
+        if (!fs.existsSync(uploadPath)) fs.mkdirSync(uploadPath, { recursive: true });
+        const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(req.file.originalname)}`;
+        const fullPath = path.join(uploadPath, uniqueName);
+        fs.writeFileSync(fullPath, req.file.buffer);
+        product.image = uniqueName;
+      } catch (fsErr) {
+        console.error('Failed to save file locally:', fsErr);
+        return res.status(500).json({ message: 'Failed to save image' });
       }
     }
 
@@ -177,19 +184,38 @@ router.put('/:id', adminAuth, upload.single('image'), async (req, res) => {
         }
       }
 
-      updateData.image = req.file.filename;
-      // If Cloudinary is configured, upload and set URL
-      if (process.env.CLOUDINARY_URL && cloudinary) {
+      // Handle new upload buffer -> Cloudinary or local fallback
+      if (process.env.CLOUDINARY_URL && cloudinary && req.file && req.file.buffer) {
         try {
-          const uploadResult = await cloudinary.uploader.upload(req.file.path, { folder: 'ecommerce/products' });
+          const dataUri = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+          const uploadResult = await cloudinary.uploader.upload(dataUri, { folder: 'ecommerce/products' });
           updateData.image = uploadResult.secure_url;
           updateData.imagePublicId = uploadResult.public_id;
-          // delete local file
-          fs.unlink(req.file.path, (err) => {
-            if (err) console.warn('Failed to delete local product image:', err.message || err);
-          });
         } catch (err) {
           console.error('Cloudinary upload error on update:', err);
+          // fallback to write buffer to disk
+          try {
+            const uploadPath = 'uploads/products/';
+            if (!fs.existsSync(uploadPath)) fs.mkdirSync(uploadPath, { recursive: true });
+            const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(req.file.originalname)}`;
+            const fullPath = path.join(uploadPath, uniqueName);
+            fs.writeFileSync(fullPath, req.file.buffer);
+            updateData.image = uniqueName;
+          } catch (fsErr) {
+            console.error('Failed to save uploaded file to disk as fallback on update:', fsErr);
+          }
+        }
+      } else {
+        // No Cloudinary - save locally
+        try {
+          const uploadPath = 'uploads/products/';
+          if (!fs.existsSync(uploadPath)) fs.mkdirSync(uploadPath, { recursive: true });
+          const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(req.file.originalname)}`;
+          const fullPath = path.join(uploadPath, uniqueName);
+          fs.writeFileSync(fullPath, req.file.buffer);
+          updateData.image = uniqueName;
+        } catch (fsErr) {
+          console.error('Failed to save uploaded file locally on update:', fsErr);
         }
       }
     }
@@ -217,11 +243,19 @@ router.delete('/:id', adminAuth, async (req, res) => {
       return res.status(404).json({ message: 'Product not found' });
     }
 
-    // Delete image file
+    // Delete image file or Cloudinary asset
     if (product.image) {
-      const imagePath = `uploads/products/${product.image}`;
-      if (fs.existsSync(imagePath)) {
-        fs.unlinkSync(imagePath);
+      if (product.imagePublicId && process.env.CLOUDINARY_URL && cloudinary) {
+        try {
+          await cloudinary.uploader.destroy(product.imagePublicId);
+        } catch (err) {
+          console.warn('Failed to delete product image from Cloudinary:', err.message || err);
+        }
+      } else {
+        const imagePath = `uploads/products/${product.image}`;
+        if (fs.existsSync(imagePath)) {
+          fs.unlinkSync(imagePath);
+        }
       }
     }
 
